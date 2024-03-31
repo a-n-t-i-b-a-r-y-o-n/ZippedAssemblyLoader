@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <!-- NuGet package metadata -->
+        <IsPackable>true</IsPackable>
+        <PackageId>ZippedAssemblyLoader</PackageId>
+        <Version>0.0.1</Version>
+        <Authors>antibaryon</Authors>
+        <Company>N/A</Company>
+        <Product>Zipped Assembly Loader</Product>
+        <Description>Load .NET Assemblies from Zip Archives</Description>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>
