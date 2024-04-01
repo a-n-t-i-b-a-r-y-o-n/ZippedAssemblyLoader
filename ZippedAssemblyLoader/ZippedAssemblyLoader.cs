@@ -50,13 +50,11 @@ public sealed class ZippedAssemblyLoader
         using var archive = ZipFile.OpenRead(ArchiveFilename);
         foreach (var entry in archive.Entries.Where(e => e.Name.EndsWith(".dll")))
         {
-            // Load Assembly from zip file
-            var assembly = LoadZippedAssembly(entry);
-
-            // If this is the correct Assembly, return it
-            if (assembly.FullName == assemblyName.FullName)
+            // Check if this is the correct Assembly
+            if (GetZippedAssemblyName(entry) == assemblyName)
             {
-                return assembly;
+                // Return the loaded Assembly
+                return LoadZippedAssembly(entry);
             }
         }
 
@@ -74,13 +72,12 @@ public sealed class ZippedAssemblyLoader
         using var archive = ZipFile.OpenRead(ArchiveFilename);
         foreach (var entry in archive.Entries.Where(e => e.Name.EndsWith(".dll")))
         {
-            // Load Assembly from zip file
-            var assembly = LoadZippedAssembly(entry);
-
-            // If this is the correct Assembly, return it
-            if (assembly.FullName == assemblyName)
+            // Check if this is the correct Assembly
+            var name = GetZippedAssemblyName(entry);
+            if (name?.FullName == assemblyName || name?.Name == assemblyName)
             {
-                return assembly;
+                // Return the loaded Assembly
+                return LoadZippedAssembly(entry);
             }
         }
 
@@ -133,6 +130,45 @@ public sealed class ZippedAssemblyLoader
         NativeLibrary.SetDllImportResolver(assembly, ResolveZippedNativeLibrary);
 
         return assembly;
+    }
+
+    /// <summary>
+    /// Get the <see cref="AssemblyName"/> of a zipped Assembly without loading it
+    /// </summary>
+    /// <param name="entry">The zip archive entry</param>
+    /// <returns>The AssemblyName, if it could be loaded</returns>
+    private AssemblyName? GetZippedAssemblyName(ZipArchiveEntry entry)
+    {
+        // Get temporary filename
+        var temporaryFile = Path.GetTempFileName();
+
+        // Get the assembly name
+        try
+        {
+            // Remove auto-created temp file
+            if (File.Exists(temporaryFile))
+            {
+                File.Delete(temporaryFile);
+            }
+
+            // Extract the library to temp file
+            entry.ExtractToFile(temporaryFile);
+
+            // Get AssemblyName from temp file
+            return AssemblyName.GetAssemblyName(temporaryFile);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            // Clean up temporary file
+            if (File.Exists(temporaryFile))
+            {
+                File.Delete(temporaryFile);
+            }
+        }
     }
 
     /// <inheritdoc cref="System.Runtime.InteropServices.DllImportResolver"/>>
