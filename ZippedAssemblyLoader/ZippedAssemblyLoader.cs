@@ -1,5 +1,8 @@
 using System.IO.Compression;
+using System.IO.MemoryMappedFiles;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 
 namespace ZippedAssemblyLoader;
@@ -68,7 +71,7 @@ public sealed class ZippedAssemblyLoader
     /// <returns>The loaded Assembly, if it exists and could be loaded</returns>
     internal Assembly? LoadAssemblyByName(string assemblyName)
     {
-        // Open archive into memory and iterate its entries
+        // Read archive into memory and iterate its entries
         using var archive = ZipFile.OpenRead(ArchiveFilename);
         foreach (var entry in archive.Entries.Where(e => e.Name.EndsWith(".dll")))
         {
@@ -133,41 +136,32 @@ public sealed class ZippedAssemblyLoader
     }
 
     /// <summary>
-    /// Get the <see cref="AssemblyName"/> of a zipped Assembly without loading it
+    /// Get the <see cref="AssemblyName"/> of an archived Assembly without writing it to disk
     /// </summary>
     /// <param name="entry">The zip archive entry</param>
     /// <returns>The AssemblyName, if it could be loaded</returns>
     private AssemblyName? GetZippedAssemblyName(ZipArchiveEntry entry)
     {
-        // Get temporary filename
-        var temporaryFile = Path.GetTempFileName();
-
-        // Get the assembly name
         try
         {
-            // Remove auto-created temp file
-            if (File.Exists(temporaryFile))
-            {
-                File.Delete(temporaryFile);
-            }
+            // Create in-memory temporary file
+            using var tempFile = MemoryMappedFile.CreateNew(entry.Name, entry.Length);
 
-            // Extract the library to temp file
-            entry.ExtractToFile(temporaryFile);
+            // Get temp file stream
+            using var fileStream = tempFile.CreateViewStream();
 
-            // Get AssemblyName from temp file
-            return AssemblyName.GetAssemblyName(temporaryFile);
+            // Get the archive entry stream
+            using var entryStream = entry.Open();
+
+            // Open the stream as a PE file
+            using var reader = new PEReader(entryStream);
+
+            // Return the assembly name
+            return reader.GetMetadataReader().GetAssemblyDefinition().GetAssemblyName();
         }
         catch (Exception)
         {
             return null;
-        }
-        finally
-        {
-            // Clean up temporary file
-            if (File.Exists(temporaryFile))
-            {
-                File.Delete(temporaryFile);
-            }
         }
     }
 
