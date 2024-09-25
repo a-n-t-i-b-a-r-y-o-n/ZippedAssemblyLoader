@@ -1,0 +1,107 @@
+stages:
+  - Build
+  - Test
+  - Package
+  - Publish
+
+# ==== Snippets ====
+
+.vault:
+  install_hcp_cli: &install_hcp_cli
+    - apt-get update
+    - apt-get install wget gpg coreutils lsb-release -y
+    - wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list
+    - apt-get update && apt-get install hcp
+
+  login_hcp_cli: &login_hcp_cli
+    - hcp auth login --client-id="${HCP_CLIENT_ID}" --client-secret="${HCP_CLIENT_SECRET}"
+
+  logout_hcp_cli: &logout_hcp_cli
+    - hcp auth logout
+
+.cloudsmith:
+  install_cloudsmith_cli: &install_cloudsmith_cli
+    - apt-get update
+    - apt-get install pipx -y
+    - pipx install cloudsmith-cli
+    - pipx ensurepath
+
+# ==== Templates ====
+
+.template_csharp:
+  image: "mcr.microsoft.com/dotnet/sdk:8.0"
+  variables:
+    PROJECT_NAME: "ZippedAssemblyLoader"
+  before_script:
+
+# ==== Build ====
+
+dotnet_build:
+  stage: Build
+  extends: .template_csharp
+  needs: []
+  script:
+    # Build the release
+    - dotnet build -c Release "${PROJECT_NAME}".sln
+    # Extract the version number
+    - export NUPKG_VERSION=$(cat "${PROJECT_NAME}/${PROJECT_NAME}.csproj" | grep '<Version>' | tr -d ' </Version>')
+    # Pass the version number to later jobs
+    - echo "NUPKG_VERSION=${NUPKG_VERSION}" > .env
+  artifacts:
+    expire_in: 1 days
+    reports:
+      dotenv: ".env"
+    paths:
+      - "${PROJECT_NAME}/bin/Release"
+
+# ==== Test ====
+
+dotnet_test:
+  stage: Test
+  extends: .template_csharp
+  needs: ["dotnet_build"]
+  script:
+    # Run tests in the test assembly
+    - dotnet test
+
+# ==== Package ====
+
+dotnet_package:
+  stage: Package
+  extends: .template_csharp
+  needs: ["dotnet_build", "dotnet_test"]
+  script:
+    # Package the release
+    - dotnet pack
+    # Pass the output path to later jobs
+    - echo "NUPKG_PATH=${PROJECT_NAME}/bin/Release/${PROJECT_NAME}.${NUPKG_VERSION}.nupkg" > .env
+  artifacts:
+    expire_in: 1 days
+    reports:
+      dotenv: ".env"
+    paths:
+      - "${PROJECT_NAME}/bin/Release/${PROJECT_NAME}.${NUPKG_VERSION}.nupkg"
+
+# ==== Publish ====
+
+publish_nupkg:
+  stage: Publish
+  extends: .template_csharp
+  needs: ["dotnet_package"]
+  script:
+    # Install dependencies
+    - *install_hcp_cli
+    # Get CloudSmith API key
+    - *login_hcp_cli
+    - export CLOUDSMITH_API_KEY=$(hcp vault-secrets run --app=${VS_APP_NAME} -- env | grep CLOUDSMITH_API_KEY | cut -d'=' -f2)
+    - *logout_hcp_cli
+    # Publish to our CloudSmith source with dotnet CLI
+    - >
+      dotnet nuget push "${NUPKG_PATH}"
+      --source 'https://nuget.cloudsmith.io/muonium/diffraction/v3/index.json'
+      --api-key "${CLOUDSMITH_API_KEY}"
+  artifacts:
+    expire_in: 1 days
+    paths:
+      - "${NUPKG_PATH}"
