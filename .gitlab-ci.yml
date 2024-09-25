@@ -1,5 +1,6 @@
 stages:
   - Build
+  - Test
   - Package
   - Publish
 
@@ -54,12 +55,22 @@ dotnet_build:
     paths:
       - "${PROJECT_NAME}/bin/Release"
 
+# ==== Test ====
+
+dotnet_test:
+  stage: Test
+  extends: .template_csharp
+  needs: ["dotnet_build"]
+  script:
+    # Run tests in the test assembly
+    - dotnet test
+
 # ==== Package ====
 
 dotnet_package:
   stage: Package
   extends: .template_csharp
-  needs: ["dotnet_build"]
+  needs: ["dotnet_build", "dotnet_test"]
   script:
     # Package the release
     - dotnet pack
